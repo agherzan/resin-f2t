@@ -1,0 +1,164 @@
+#!/bin/bash
+
+#
+# Script for transfering a config.json file from a resin raw image to another
+# ---------------------------------------------------------------------------
+#
+# An example of usecase is when somebody wants to run a staging build/image on the resin
+# production server.
+#
+# Signed-off-by: Andrei Gherzan <andrei@resin.io>
+#
+
+TOOL_VERSION=1.0
+FROM_IMAGE=
+TO_IMAGE=
+TMP_CONFIG=/tmp/config.json.tmp
+
+TOOL_PREREQUISITES="losetup mcopy"
+
+function log {
+    # Address log levels
+    case $1 in
+        ERROR)
+            loglevel=ERROR
+            shift
+            ;;
+        WARN)
+            loglevel=WARNING
+            shift
+            ;;
+        *)
+            loglevel=LOG
+            ;;
+    esac
+    echo "[$loglevel]" "$1"
+    if [ "$loglevel" == "ERROR" ]; then
+        exit 1
+    fi
+}
+
+function help {
+    echo "Usage: "`basename "$0"`" [options]"
+
+    echo
+    echo -e "Mandatory arguments:"
+
+    echo -e "\t-f | --from"
+    echo -e "\t\t Point to the local downloaded image from which the config will be used."
+
+    echo -e "\t-t | --to"
+    echo -e "\t\t Point to the local downloaded image to which the config will be injected."
+
+    echo
+    echo -e "Options:"
+
+    echo -e "\t-h | --help"
+    echo -e "\t\t Print this message."
+}
+
+function cleanup {
+    rm -rf $TMP_CONFIG > /dev/null 2>&1
+    losetup -d $loopdevfrom > /dev/null 2>&1
+    losetup -d $loopdevto > /dev/null 2>&1
+}
+
+function try {
+    if [ $# -lt 0 ]; then
+        log ERROR "Wrong try call."
+    fi
+    $($1 > /dev/null 2>&1)
+    if [ "$?" != "0" ]; then
+        cleanup
+        log ERROR "\"$1\" failed."
+    fi
+}
+
+
+#
+# Main
+#
+
+
+# Parse arguments
+while [[ $# -ge 1 ]]; do
+    i="$1"
+    case $i in
+        -h|--help)
+            help
+            exit 0
+            ;;
+        -f|--from)
+            if [ -z "$2" ]; then
+                log ERROR "\"$1\" argument needs a value."
+            fi
+            FROM_IMAGE=$2
+            shift
+            ;;
+        -t|--to)
+            if [ -z "$2" ]; then
+                log ERROR "\"$1\" argument needs a value."
+            fi
+            TO_IMAGE=$2
+            shift
+            ;;
+        -v|--version )
+            echo $TOOL_VERSION
+            exit 0
+            ;;
+        *)
+            log ERROR "Unrecognized option $1."
+            ;;
+    esac
+    shift
+done
+
+# Make sure only root can run our script
+if [[ $EUID -ne 0 ]]; then
+   log ERROR "This script must be run as root"
+fi
+log "Root detected ... ok."
+
+if [ -z $FROM_IMAGE -o -z $TO_IMAGE ]; then
+    log ERROR "Missing mandatory arguments. Check help."
+fi
+
+if [ ! -f $FROM_IMAGE -o ! -f $TO_IMAGE ]; then
+    log ERROR "Production and/or staging images are not valid paths."
+fi
+log "Script arguments ... ok."
+
+for tool in $TOOL_PREREQUISITES; do
+    if ! which $tool > /dev/null 2>&1; then
+        log ERROR "$tool needs to be present on your system to be able to use this script."
+    fi
+done
+log "Tool prerequisites ... ok."
+
+# Get the config file from "from" image
+loopdevfrom=$(losetup -f)
+if [ "$?" != "0" ]; then
+    log ERROR "No free loop devices on this system."
+fi
+log "$loopdevfrom detected and will be used."
+log "Getting config from $FROM_IMAGE ... "
+try "losetup -f -P $FROM_IMAGE"
+try "sudo mcopy -n -o -i ${loopdevfrom}p5 ::config.json $TMP_CONFIG"
+try "losetup -d $loopdevfrom"
+log "config from $FROM_IMAGE acquired."
+
+# Inject the config file to "to" image
+loopdevto=$(losetup -f)
+if [ "$?" != "0" ]; then
+    log ERROR "No free loop devices on this system."
+fi
+log "$loopdevto detected and will be used."
+log "Injecting config file in $FROM_IMAGE ... "
+try "losetup -f -P $TO_IMAGE"
+try "sudo mcopy -n -o -i ${loopdevto}p5 $TMP_CONFIG ::config.json"
+try "losetup -d $loopdevto"
+log "config from $FROM_IMAGE injected in $TO_IMAGE."
+
+cleanup
+
+exit 0
