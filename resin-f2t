@@ -143,7 +143,7 @@ fi
 log "$loopdevfrom detected and will be used."
 log "Getting config from $FROM_IMAGE ... "
 try "losetup -f -P $FROM_IMAGE"
-try "sudo mcopy -n -o -i ${loopdevfrom}p5 ::config.json $TMP_CONFIG"
+try "sudo mcopy -n -o -i ${loopdevfrom}p1 ::config.json $TMP_CONFIG"
 try "losetup -d $loopdevfrom"
 log "config from $FROM_IMAGE acquired."
 
@@ -155,7 +155,7 @@ fi
 log "$loopdevto detected and will be used."
 log "Injecting config file in $FROM_IMAGE ... "
 try "losetup -f -P $TO_IMAGE"
-try "sudo mcopy -n -o -i ${loopdevto}p5 $TMP_CONFIG ::config.json"
+try "sudo mcopy -n -o -i ${loopdevto}p1 $TMP_CONFIG ::config.json"
 try "losetup -d $loopdevto"
 log "config from $FROM_IMAGE injected in $TO_IMAGE."
 
